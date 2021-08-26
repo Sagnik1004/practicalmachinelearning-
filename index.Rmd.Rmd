@@ -1,0 +1,153 @@
+---
+title: "ML project"
+author: "Me"
+date: "12/08/2021"
+output: html_document
+---
+
+# Reading the given training and test sets
+```{r setup, echo=TRUE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(ggplot2)
+
+
+pml_training<- read.csv('pml-training.csv')
+pml_testing<- read.csv('pml-testing.csv')
+
+```
+
+Having a quick look at our training and test sets
+```{r echo=TRUE, results='hide'}
+head(pml_training)
+str(pml_training)
+head(pml_testing)
+str(pml_testing)
+```
+
+# Cleaning the data
+
+### Step 1: Dealing with NA values
+
+**NA strategy**: if a variable or column has more than 50% NA values then we will omit it from our dataset. Any variable that satisfies this condition and has less than or equal to 50% NA values will be kept. After that we will impute the remaining NA values and check if it will be a viable predictor for our model building or not
+
+```{r echo=TRUE}
+cond<- colSums(is.na(pml_training))<= (0.50*nrow(pml_training))
+my_cleanset<- pml_training[, cond] #subsetting our training set to include only those variables that satisfy cond i.e. we will only keep a variable or column that has 50% or lesser NA values
+```
+
+We are now checking for any integer or numeric variables that are being stored in character format and convert them into numeric class. We will apply the same condition from before i.e. we will only keep a variable or column that has 50% or lesser NA values
+```{r echo=TRUE, results='hide'}
+character_variables<- my_cleanset[,sapply(my_cleanset, class)=='character']
+str(character_variables)
+```
+
+We will now apply our NA strategy to see which variables to keep and which variables to remove. "" is the same as NA value in character format
+```{r echo=TRUE, results='hide'}
+
+cond2<- colSums(character_variables=="")<= (0.50*nrow(character_variables)) #we want to find how many of the character variables can be converted into numeric class provided they have atleast 50% of the values i.e. we will tolerate maximum 50% NA values
+cond2
+character_variables_subset<- character_variables[,cond2] #subsetting character_variables so that it satisfies our cond2 or the NA strategy
+head(character_variables_subset) #so we don't need any of the columns aside from user_name, cvtd_timestamp, new_window and classe as they did not satisfy cond2
+
+```
+
+Now doing the appropriate class conversions
+```{r echo=TRUE, results='hide'}
+library(dplyr)
+library(lubridate)
+character_variables_subset <- mutate(character_variables_subset, cvtd_timestamp= dmy_hm(cvtd_timestamp)) 
+str(character_variables_subset)
+
+```
+
+Now replacing the proper preprocessed columns in character_variables_subset to my_cleanset or our training set
+```{r echo=TRUE}
+my_cleanset2<- my_cleanset
+my_cleanset2$cvtd_timestamp<- character_variables_subset$cvtd_timestamp
+my_cleanset<- my_cleanset2
+```
+
+Now we are removing all the unnecessary character variables that did not satisfy cond2
+```{r echo=TRUE}
+char_var_to_be_removed<- names(character_variables[,!cond2]) 
+my_cleanset<- select(my_cleanset, -char_var_to_be_removed)
+```
+### Step 2: Data conversions and removing remaining unnecessary variables**
+
+Converting classe and new_window into factor variables
+```{r echo=TRUE}
+my_cleanset$classe<- as.factor(my_cleanset$classe)
+my_cleanset$new_window<- as.factor(my_cleanset$new_window)
+
+```
+
+We will use nearZeroVar() to find out the variables that have near zero variance and will omit them from our model building process
+```{r echo=TRUE}
+library(ISLR)
+library(caret)
+nearZeroVar(my_cleanset, saveMetrics = TRUE) #so the variable new_window has near zero variance. So it won't be a good predictor for our model. 
+#We also no that the variable X contains just the serial numbers so we won't need it.
+
+```
+
+so removing X and new_window from our train set
+```{r echo=TRUE}
+my_cleanset_updated<- select(my_cleanset, -c(X, new_window))
+str(my_cleanset_updated) #this is the final cleaned and formatted train set
+```
+
+# Building a model with classe as our outcome variable and random forest as our prediction method
+
+**Algorithm: We will use random forest here as our outcome variable classe is a categorical variable and random forests are good with non linear data**
+
+Now dividing the train set further into a smaller train (70%) and validation set(30%). We will then building a model with random forest method
+```{r echo=TRUE, cache=TRUE}
+set.seed(100)
+project_train<- createDataPartition(my_cleanset_updated$classe, p=0.70, list = FALSE)
+my_cleanset_training<- my_cleanset_updated[project_train,]
+my_cleanset_validation<- my_cleanset_updated[-project_train,]
+```
+
+**Usiing parallel processing for improving the processing time of random forest**
+
+
+```{r echo=TRUE, cache=TRUE}
+#Step 1: Configure parallel processing
+library(parallel)
+library(doParallel)
+
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+
+
+#Configuring trainControl object.We will be doing cross validation with 10 folds
+
+modControl<- trainControl(method = 'cv', number = 5, verboseIter = TRUE, allowParallel = TRUE)
+
+
+
+#Finally, building a model with random forest method
+
+
+set.seed(100)
+system.time(model_RF<- train(classe~., data= my_cleanset_training, method= 'rf', trControl= modControl))
+
+
+#Step 4: De-register parallel processing cluster
+
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+**Now evaluating the accuracy on our validation set**
+```{r echo=TRUE}
+set.seed(100)
+modelRF_predictions<- predict(model_RF, my_cleanset_validation)
+confusionMatrix(my_cleanset_validation$classe, modelRF_predictions)
+```
+
+# Conclusion
+
+**So we are getting an accuracy of 0.9985 or near 100% accuracy (approximately). So we can conclude that using a random forest model is giving us near perfect accuracy on our validation set**
