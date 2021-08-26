@@ -451,6 +451,20 @@ confusionMatrix(my_cleanset_validation$classe, modelRF_predictions)</code></pre>
 <h1>Conclusion</h1>
 <p><strong>So we are getting an accuracy of 0.9985 or near 100% accuracy (approximately). So we can conclude that using a random forest model is giving us near perfect accuracy on our validation set</strong></p>
 </div>
+<div id="prediciting-on-the-test-data-set-now" class="section level1">
+<h1>Prediciting on the test data set now</h1>
+<pre class="r"><code>pml_testing_updated&lt;- pml_testing[,-160] #removing problem ID from test set
+#cleaning the test set
+pml_testing_updated&lt;- select(pml_testing_updated, names(my_cleanset_updated)[-58]) #selecting only the variables in our final cleaned train set and removing classe as it does not exist the test set
+ 
+pml_testing_updated&lt;- mutate(pml_testing_updated, cvtd_timestamp= dmy_hm(cvtd_timestamp)) 
+set.seed(100)
+#now predicting on the test set
+testing_predictions&lt;- predict(model_RF, pml_testing_updated)
+testing_predictions</code></pre>
+<pre><code>##  [1] B A B A A E D B A A B C B A E E A B B B
+## Levels: A B C D E</code></pre>
+</div>
 
 
 
